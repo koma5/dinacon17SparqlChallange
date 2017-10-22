@@ -42,31 +42,42 @@
 
 
 		var query = `PREFIX schema: <http://schema.org/>
-			PREFIX gn: <http://www.geonames.org/ontology#>
-			PREFIX geo: <http://www.opengis.net/ont/geosparql#>
-			PREFIX dct: <http://purl.org/dc/terms/>
-			select ?Municipality ?Name ?Population ?WKT
-			where
-			{
-			?Municipality a gn:A.ADM3 .
-			?Municipality schema:name ?Name .
-			?Municipality gn:population ?Population .
-			?Municipality dct:issued ?Date .
-			?Municipality gn:parentADM1 ?InCanton .
-			?InCanton schema:name ?CantonName .
-			?Municipality geo:hasGeometry ?Geometry .
-			?Geometry geo:asWKT ?WKT .
-			FILTER (?Date = "2017-01-01"^^xsd:date)
-			FILTER (?CantonName = "Bern")  
-			}`;
-		var endPoint = "https://ld.geo.admin.ch/query";
+		       PREFIX gn: <http://www.geonames.org/ontology#>
+		  PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+		  PREFIX dct: <http://purl.org/dc/terms/>
+		  PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+
+		  select ?MunVersion ?Name ?Population ?WKT ?coatOfArms
+		  WHERE {
+		  SERVICE <https://sparql.geo.admin.ch> {
+		      ?MunVersion a gn:A.ADM3 .
+		      ?MunVersion schema:name ?Name .
+		      ?MunVersion gn:population ?Population .
+		      ?MunVersion dct:issued ?Date .
+		      ?MunVersion gn:parentADM1 ?InCanton .
+		      ?InCanton schema:name ?CantonName .
+		      ?MunVersion geo:hasGeometry ?Geometry .
+		      ?Geometry geo:asWKT ?WKT .
+		      FILTER (?Date = "2017-01-01"^^xsd:date)
+		      FILTER (?CantonName = "Bern")
+
+
+		      ?MunVersion dct:isVersionOf ?Mun .
+		      #?Mun schema:sameAs ?geoj . #geojson url per mun
+		  }
+		  SERVICE <http://query.wikidata.org/sparql> {
+		      ?munAtWiki wdt:P1325 ?Mun .
+		      ?munAtWiki wdt:P94 ?coatOfArms .
+		  }
+		  }`;
+		var endPoint = "https://lindas-data.ch/sparql";
 
 		//Main render function
 		d3.sparql(endPoint, query, function(error, data) {
 		  if (error) throw error;
 		  //console.log(data); // [{'developerName': 'Mike Bostock'}]
 		  var newData = [];
-		  
+
 		  var popEx = d3.extent(data, function(d) { return d.Population.valueOf(); });
 		  var popMin = d3.min(data, function(d) { return d.Population.valueOf(); });
 		  var popMax = d3.max(data, function(d) { return d.Population.valueOf(); });
@@ -90,6 +101,7 @@
 			  newObj.properties.municipality= data[i].Municipality;
 			  newObj.properties.name= data[i].Name;
 			  newObj.properties.population= data[i].Population.valueOf();
+				newObj.properties.coatOfArms = data[i].coatOfArms.valueOf();
 			  newObj.type = 'Feature';
 
 		  	var wkt = new Wkt.Wkt();
@@ -104,8 +116,8 @@
       addLmaps();
       console.log('maps added');
 			//karteZ();
-			
-      drawFeatures(newData); 
+
+      drawFeatures(newData);
 
       map.addControl(new customControl1());
 		})
@@ -116,7 +128,7 @@
             position: 'topright'
         },
 
-        onAdd: function (map) { 
+        onAdd: function (map) {
 
             var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom');
             container.innerHTML = 'Reset Zoom'
@@ -146,7 +158,7 @@
         this.stream.point(point.x, point.y);
     }
 
-		//Add the OpenStreetMap Layer via leaflet    
+		//Add the OpenStreetMap Layer via leaflet
 		function addLmaps() {
 		    latOrg = 46.9;
 		    lngOrg = 7.7;
@@ -158,9 +170,9 @@
 		     maxZoom: 18,
 		        attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
 		    }).addTo(map);
-		    map._initPathRoot();	
-		    
-		}	
+		    map._initPathRoot();
+
+		}
 
 		function projectPoint(x, y) {
 		    var point = map.latLngToLayerPoint(new L.LatLng(y, x));
@@ -171,13 +183,14 @@
     function drawFeatures(mapData) {
       var svg = d3.select('#map').select('svg');
       var svgMap = svg.append('g').attr('id', 'svgMap');
-
+			var coatOfArms = d3.select('#coatOfArms').append('img').attr('width', '100px');
+			//var munLabel = svgMap.append('text');
 
 
       var transform = d3.geoTransform({point: projectPoint});
       var path = d3.geoPath().projection(transform);
 
-      //Some custom map data in topoJSON Format 
+      //Some custom map data in topoJSON Format
       //from https://statistik.zh.ch/internet/justiz_inneres/statistik/de/daten/Raeumliche_Daten/Basiskarten.html
       //can be anything
       //d3.json(mapData, function(error, mapData) {
@@ -196,20 +209,21 @@
       			//console.log(d.properties.name);
       			var bBox = d3.select(this).node().getBBox();
       			//console.log(bBox);
-      			svgMap.append('text')
-      				.attr('class', 'mouse')
+      			munLabel.attr('class', 'mouse')
       				.attr('x', bBox.x+bBox.width/2)
       				.attr('y', bBox.y+bBox.height/2)
       				.text(d.properties.name+': '+chFormat.format(',')(d.properties.population));
+						coatOfArms.attr('src', d.properties.coatOfArms);
       		})
       		.on('mouseout', function() {
       			//undo what ever you wanted to do with your Map-Data on Mouse-Out
-      			d3.selectAll('.mouse').remove();
+      			//d3.selectAll('.mouse').remove();
+						//coatOfArms.selectAll('img').remove();
       		})
       		.on('click', function() {
       			//or maybe some click-action?
       		});
-      		
+					var munLabel = svgMap.append('text');
 
 
 				//some map functionality
@@ -220,7 +234,7 @@
     		});
 
     		//update the svg-stuff when the leaflet-map gets zoomed or moved
-    		function update() {	
+    		function update() {
   		    featureElement.attr('d', path);
   		    //Move Circles when Map moves
     		}
